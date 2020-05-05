@@ -126,6 +126,11 @@ android {
 }
 
 dependencies {
+    compile project(':react-native-onesignal')
+    compile project(':react-native-admob')
+    compile project(':react-native-share')
+    compile project(':bugsnag-react-native')
+    compile project(':react-native-sound')
     compile project(':react-native-fs')
     compile project(':react-native-device-info')
     compile project(':react-native-audio-streaming')

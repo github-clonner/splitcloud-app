@@ -3,6 +3,11 @@ package com.example;
 import android.app.Application;
 
 import com.facebook.react.ReactApplication;
+import com.geektime.rnonesignalandroid.ReactNativeOneSignalPackage;
+import com.sbugert.rnadmob.RNAdMobPackage;
+import cl.json.RNSharePackage;
+import com.bugsnag.BugsnagReactNative;
+import com.zmxv.RNSound.RNSoundPackage;
 import com.rnfs.RNFSPackage;
 import com.learnium.RNDeviceInfo.RNDeviceInfo;
 import com.facebook.react.ReactNativeHost;
@@ -25,6 +30,11 @@ public class MainApplication extends Application implements ReactApplication {
     protected List<ReactPackage> getPackages() {
       return Arrays.<ReactPackage>asList(
           new MainReactPackage(),
+            new ReactNativeOneSignalPackage(),
+            new RNAdMobPackage(),
+            new RNSharePackage(),
+            BugsnagReactNative.getPackage(),
+            new RNSoundPackage(),
             new RNFSPackage(),
             new RNDeviceInfo(),
           new ReactNativeAudioStreamingPackage(MainActivity.class)

@@ -104,7 +104,8 @@ class uploaderProfileContainer extends Component {
     );
     requestPromise
     .catch((err) => {
-      this.props.onRequestFail(err);
+      console.log(err);
+      this.onRequestFail(err);
       return Promise.resolve(err);
     });
     return requestPromise;
@@ -183,8 +184,9 @@ const styles = StyleSheet.create({
 const mapStateToProps = (state,props) => {
   const uploaderProfile =
     state.uploaderProfile.filter((profile) => profile.side == props.side).pop();
+  const lastUploaderUrl = uploaderProfile ? uploaderProfile.lastUploaderUrl : null;
   return {
-    scUploaderLink : uploaderProfile ? uploaderProfile.lastUploaderUrl :null
+    scUploaderLink : props.scUploaderLink || lastUploaderUrl
   };
 }
 const mapDispatchToProps = (dispatch,props) =>({

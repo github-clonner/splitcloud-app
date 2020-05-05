@@ -6,33 +6,32 @@ import React, { PropTypes, Component } from 'react';
 import {
   AppRegistry,
   StyleSheet,
-  Text,
-  TextInput,
-  ListView,
   View,
-  TouchableOpacity,
 } from 'react-native';
-import axios from 'axios';
 import config from '../helpers/config';
 import THEME from '../styles/variables'
 import { connect } from 'react-redux';
-import { compose } from 'redux';
 import SoundCloudApi from '../modules/SoundcloudApi';
 import TrackList from '../components/trackList';
+import ToggleFavoriteTrackContainer from './toggleFavoriteTrackContainer';
 import PlaylistContainer from './playlistContainer';
+
+import {
+  setPreviewTrack
+} from '../redux/actions/previewActions';
 import {
   pushNotification
 } from '../redux/actions/notificationActions';
 import {
   setPlaylist,
-  addPlaylistItem,
-  removePlaylistItem,
   changeCurrentPlayIndex
 } from '../redux/actions/currentPlaylistActions';
 import {
   formatDurationExtended,
   formatNumberPrefix
 } from '../helpers/formatters';
+import HorizontalTrackListing from '../components/horizontalTrackListing';
+
 const {SC_CLIENT_ID} = config;
 
 class TrackListContainer extends Component {
@@ -43,40 +42,39 @@ class TrackListContainer extends Component {
     );
     this.scApi = new SoundCloudApi({clientId: SC_CLIENT_ID});
     this.onTrackActionRender = this.onTrackActionRender.bind(this);
-    this.onTrackAction = this.onTrackAction.bind(this);
     this.onTrackSelected = this.onTrackSelected.bind(this);
-    this.trackListRef = null;
-    console.log('TrackListContainer onEndThreshold',props.onEndThreshold)
+    this.onPlaylistSelected = this.onPlaylistSelected.bind(this);
+    console.log('TrackListContainer ',props.onEndThreshold, props.navigator);
   }
-  componentWillReceiveProps(newProps){
-    if(this.props.resetToTop && (this.props.trackList !== newProps.trackList)){
-      console.log('scroll to top');
-      this.trackListRef.scrollTo({x:0, y:0, animated:true});
-    }
-  }
+  
   hasFavoriteTrack(track){
     return this.props.favoritePlaylist.tracks.find(t => t.id == track.id);
-  }
-  onTrackAction(track,trackList){
-    if(typeof this.props.onTrackActionRender == 'function'){
-      return this.props.onTrackAction(track, trackList, this.hasFavoriteTrack(track));
-    }
   }
   onTrackActionRender(track){
     if(typeof this.props.onTrackActionRender == 'function'){
       return this.props.onTrackActionRender(track, this.hasFavoriteTrack(track));
+    } else {
+      return <ToggleFavoriteTrackContainer 
+        inlineLayout 
+        side={this.props.side}
+        track={track}
+      />
     }
   }
   onTrackSelected(...args){
     if(args[0].type == 'playlist'){
+      if(this.props.onPlaylistSelected){
+        return this.props.onPlaylistSelected(...args);
+      }
       this.onPlaylistSelected(...args);
     } else {
       this.props.onTrackSelected(...args);
     }
   }
   onPlaylistSelected(playlist){
+    console.log('',this.props)
     this.props.navigator.push({
-      title : 'PlaylistContainer - playlist.name - ' + this.props.side,
+      title : `PlaylistContainer - ${playlist.label} - ${this.props.side}`,
       name : 'PlaylistContainer' + this.props.side,
       component: PlaylistContainer,
       passProps : {
@@ -95,20 +93,37 @@ class TrackListContainer extends Component {
     return [duration,playCount,username].filter(e =>e.length).join(' • ');
   }
   render() {
+    if (this.props.layout == 'horizontal') {
+      return <HorizontalTrackListing 
+        items={this.props.trackList}
+        onTrackDescRender={this.onTrackDescRender}
+        onTrackActionRender={this.onTrackActionRender}
+        onTrackPreviewStart={this.props.onTrackPreviewStart}
+        onTrackPreviewEnd={this.props.onTrackPreviewEnd}
+        currentTrack={this.props.currentPlayingTrack}
+        currentPreviewTrack={this.props.currentPreviewTrack}
+        onSelected={this.onTrackSelected}
+        onPlaylistSelected={this.onPlaylistSelected}
+      />
+    }
     return (
       <View style={styles.container}>
         <TrackList
           onHeaderRender={this.props.onHeaderRender}
-          listRef={(ref) => this.trackListRef = ref}
           tracksData={this.props.trackList}
           onTrackDescRender={this.onTrackDescRender}
           onTrackActionRender={this.onTrackActionRender}
           currentTrack={this.props.currentPlayingTrack}
-          onTrackAction={this.onTrackAction}
+          currentPreviewTrack={this.props.currentPreviewTrack}
           onTrackSelected={this.onTrackSelected}
+          onTrackPreviewStart={this.props.onTrackPreviewStart}
+          onTrackPreviewEnd={this.props.onTrackPreviewEnd}
           isLoading={this.props.isLoading}
           onEndReached={this.props.onEndReached}
           onEndThreshold={this.props.onEndThreshold}
+          resetToTop={this.props.resetToTop}
+          scrollToCurrentTrack={this.props.scrollToCurrentTrack}
+          emptyLabel={this.props.emptyLabel}
         ></TrackList>
       </View>
     );
@@ -116,10 +131,7 @@ class TrackListContainer extends Component {
 }
 TrackListContainer.defaultProps ={
   resetToTop:false,
-  onTrackActionRender(track,isFavoriteTrack){
-    if(track.type == 'playlist') return null;
-    return isFavoriteTrack ? '×':'+';
-  }
+  layout: 'default',
 }
 TrackListContainer.propTypes = {
   side : PropTypes.string.isRequired,
@@ -127,11 +139,12 @@ TrackListContainer.propTypes = {
   currentPlayingTrack : PropTypes.object.isRequired,
   resetToTop: PropTypes.bool,
   onTrackActionRender: PropTypes.func,
-  onTrackAction: PropTypes.func.isRequired,
   onTrackSelected: PropTypes.func.isRequired,
   onPlaylistSelected: PropTypes.func,
   onHeaderRender: PropTypes.func,
-  isLoading: PropTypes.bool
+  isLoading: PropTypes.bool,
+  scrollToCurrentTrack: PropTypes.bool,
+  layout: PropTypes.string
 }
 const styles = StyleSheet.create({
   container: {
@@ -141,6 +154,7 @@ const styles = StyleSheet.create({
 });
 const mapStateToProps = (state,props) => {
   let playlist = state.playlist.find((playlist) => playlist.side === props.side);
+  let preview = state.preview.find(preview => preview.side === props.side);
   let playlistStore = state.playlistStore.find(
     playlistStore => playlistStore.id == playlist.currentPlaylistId);
   let favoritePlaylist = state.playlistStore.find(
@@ -150,26 +164,23 @@ const mapStateToProps = (state,props) => {
     playlist,
     favoritePlaylist,
     playlistStore,
-    currentPlayingTrack : queue[playlistStore.currentTrackIndex] || {}
+    preview,
+    currentPlayingTrack : queue[playlistStore.currentTrackIndex] || {},
+    currentPreviewTrack : preview.track
   };
 }
 const mapDispatchToProps = (dispatch,props) =>({
   pushNotification: (notification) => dispatch(pushNotification(notification)),
-  onTrackAction : (track,trackList,isTrackFavorite) => {
-    let actionMessage = '';
-    if(isTrackFavorite){
-      actionMessage = 'Deleted';
-      dispatch(removePlaylistItem(props.side,track,'default_'+props.side));
-    } else {
-      actionMessage = 'Added';
-      dispatch(addPlaylistItem(props.side,track,'default_'+props.side))
-    }
-    dispatch(pushNotification({type : 'success',message : `Favorite ${actionMessage}!`}));
-  },
   onTrackSelected : (track,trackList) => {
-    console.log('tracklist connect onTrackSelected');
+    console.log('tracklist connect onTrackSelected',track,trackList);
     dispatch(setPlaylist(props.side,trackList,'playbackQueue_'+props.side));
     dispatch(changeCurrentPlayIndex(props.side,track,'playbackQueue_'+props.side));
+  },
+  onTrackPreviewStart: (track) =>{
+    dispatch(setPreviewTrack(props.side,track));
+  },
+  onTrackPreviewEnd: () =>{
+    dispatch(setPreviewTrack(props.side,null));
   }
 });
 const mergeProps = (propsFromState, propsFromDispatch, ownProps) => {

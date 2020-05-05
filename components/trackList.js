@@ -4,11 +4,9 @@
 
 import React, { PropTypes, Component } from 'react';
 import {
-  AppRegistry,
   StyleSheet,
   Text,
   Image,
-  TextInput,
   ListView,
   View,
   TouchableOpacity,
@@ -16,14 +14,20 @@ import {
 } from 'react-native';
 import THEME from '../styles/variables';
 import AppText from './appText';
+import PlaylistItem from './playlistItem';
+import TrackItem from './trackItem';
+import UserItem from './userItem';
+const LIST_ITEM_HEIGHT = 82;
 
 class TrackList extends Component {
   constructor(props){
     super(props);
     this.updateResultList = this.updateResultList.bind(this);
     this._onSongSelected = this._onSongSelected.bind(this);
-    this._onSongAction = this._onSongAction.bind(this);
+    this.setListRef = this.setListRef.bind(this);
     this.ds = new ListView.DataSource({rowHasChanged: (r1, r2) => r1 !== r2});
+    this.listRef = null;
+    this.timerRef = null;
     this.emptyResultRow = [{
       label:this.props.emptyLabel,
       isEmpty:true
@@ -37,13 +41,31 @@ class TrackList extends Component {
   componentWillMount(){
     this.updateResultList(this.props.tracksData);
   }
+  componentDidMount(){
+    if(this.props.tracksData && this.props.scrollToCurrentTrack ){
+      setImmediate(() => {
+        this.scrollToCurrentTrack(this.props.tracksData);
+      });
+    }
+  }
   componentWillReceiveProps(newProps){
     if(this.props.tracksData != newProps.tracksData){
       this.updateResultList(newProps.tracksData);
+      if( this.props.resetToTop ) {
+        console.log('scroll to top');
+        this.listRef.scrollTo({x:0, y:0, animated:true});
+      }
     }
-    if(this.props.currentPlayingTrack != newProps.tracksData){
+    if(this.props.currentTrack != newProps.currentTrack){
       this.updateResultList([...newProps.tracksData]);
     }
+    if(this.props.currentPreviewTrack != newProps.currentPreviewTrack) {
+      this.updateResultList([...newProps.tracksData]);
+    }
+  }
+  setListRef(ref){
+    this.listRef = ref;
+    this.props.listRef(ref);
   }
   updateResultList(tracks){
     // in case of empty results or no search terms
@@ -63,34 +85,26 @@ class TrackList extends Component {
       this.props.onTrackSelected(rowData,this.state.pureList);
     }
   }
-  _onSongAction(rowData,){
-    if(!rowData.isEmpty){
-      this.props.onTrackAction(rowData,this.state.pureList);
-    }
-  }
   isTrack(rowData){
     return rowData.id && rowData.label && !rowData.isEmpty
+  }
+  scrollToCurrentTrack(trackList){
+    const scrollPx = this.getCurrentTrackIndex(trackList) * LIST_ITEM_HEIGHT ;
+    this.listRef.scrollTo({
+      x: 0, 
+      y: scrollPx,
+      animated: true
+    });
+  }
+  getCurrentTrackIndex(list){
+    const { currentTrack } = this.props;
+    return list.findIndex((track) => track.id === currentTrack.id); 
   }
   getSmallArtworkUrl(url){
     if(!url)return;
     return url.replace('-large', '-t67x67');
   }
   renderRowWithData(rowData) {
-    const rowTextStyle = rowData.isEmpty ? [styles.placeholderRowText] : [];
-    let isTrack,trackAuthor,trackTitle,artworkImage;
-    if(this.isTrack(rowData)){
-      isTrack = true;
-      [trackAuthor,trackTitle] = rowData.label.split('-').map((l) => l.trim());
-      if(!trackTitle || trackTitle.length == 0){
-        trackTitle = trackAuthor;
-        trackAuthor = rowData.username;
-      }
-      artworkImage = {url:this.getSmallArtworkUrl(rowData.artwork)};
-      if(rowData.id == this.props.currentTrack.id){
-        rowTextStyle.push(styles.hightlightText);
-      }
-    }
-
     if(rowData.isEmpty){
       return (
       <View style={[styles.rowContainerPlaceholder]}>
@@ -103,35 +117,22 @@ class TrackList extends Component {
       </View>
       );
     }
-    return (
-      <View style={styles.row}>
-        {this.props.renderArtwork &&
-          <TouchableOpacity onPress={this._onSongSelected.bind(this,rowData)}>
-            <View style={styles.rowArtworkContainer}>
-              <Image style={styles.rowArtworkImage} source={artworkImage} resizeMode={'cover'}/>
-            </View>
-          </TouchableOpacity>
-          }
-          <TouchableOpacity style={styles.rowLabel} onPress={this._onSongSelected.bind(this,rowData)}>
-              <AppText bold={true} numberOfLines={1} ellipsizeMode={'tail'} style={[styles.rowTitleText].concat(rowTextStyle)} >
-                {trackTitle}
-              </AppText>
-              <AppText bold={true} numberOfLines={1} ellipsizeMode={'tail'} style={[styles.rowAuthorText].concat(rowTextStyle)} >
-                {trackAuthor}
-              </AppText>
-              <AppText numberOfLines={1} ellipsizeMode={'tail'} style={[styles.rowDescText].concat(rowTextStyle)} >
-                {this.props.onTrackDescRender(rowData)}
-              </AppText>
-          </TouchableOpacity>
-          {!rowData.isEmpty ?
-            <TouchableOpacity style={styles.rowAction} onPress={this._onSongAction.bind(this,rowData)}>
-              <Text style={[styles.rowActionText].concat((this.props.trackActionStyles || [] ))}>
-                {this.props.onTrackActionRender(rowData)}
-              </Text>
-            </TouchableOpacity>: null
-            }
-      </View>
-    );
+    if(rowData.type == 'playlist' && rowData.isArtist){
+      return <UserItem user={rowData} onSelected={this._onSongSelected} />;
+    }
+    if(rowData.type == 'playlist'){
+      return <PlaylistItem item={rowData} onSelected={this._onSongSelected} />;
+    }
+    return <TrackItem 
+      item={rowData} 
+      currentTrack={this.props.currentTrack}
+      currentPreviewTrack={this.props.currentPreviewTrack}
+      onSelected={this._onSongSelected} 
+      onTrackActionRender={this.props.onTrackActionRender}
+      onTrackDescRender={this.props.onTrackDescRender}
+      onLongPressStart={this.props.onTrackPreviewStart}
+      onLongPressEnd={this.props.onTrackPreviewEnd}
+    />
   }
   render() {
     return (
@@ -142,16 +143,14 @@ class TrackList extends Component {
           renderHeader={this.props.onHeaderRender}
           onEndReached={this.props.onEndReached}
           onEndReachedThreshold={this.props.onEndThreshold}
-          renderRow={this.renderRowWithData.bind(this)} ref={(ref) => this.props.listRef(ref)} />
+          renderRow={this.renderRowWithData.bind(this)} ref={this.setListRef} />
       </View>
     );
   }
 }
 
 TrackList.defaultProps = {
-  emptyLabel : 'No items :(',
-  onTrackActionRender : () => '+',
-  renderArtwork: true,
+  emptyLabel : 'No songs found...',
   isLoading: false,
   onEndThreshold: 150,
   listRef : () => {}
@@ -160,12 +159,15 @@ TrackList.propTypes = {
   tracksData : PropTypes.array.isRequired,
   emptyLabel : PropTypes.string,
   onTrackSelected: PropTypes.func,
-  onTrackAction: PropTypes.func,
+  onTrackPreviewStart: PropTypes.func,
+  onTrackPreviewEnd: PropTypes.func,
   onTrackActionRender: PropTypes.func,
   renderArtwork: PropTypes.bool,
   onHeaderRender: PropTypes.func,
   currentTrackId: PropTypes.number,
-  isLoading: PropTypes.bool
+  isLoading: PropTypes.bool,
+  resetToTop: PropTypes.bool,
+  scrollToCurrentTrack: PropTypes.bool
 };
 
 const styles = StyleSheet.create({
@@ -178,95 +180,23 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.contentBgColor,
     flexDirection:'column'
   },
-  row : {
-    flex: 1,
-    flexDirection:'row',
-    marginBottom:5,
-    marginTop:5,
-    paddingLeft: 20,
-    paddingRight: 0
-  },
-  rowArtworkImage:{
-    width:50,
-    height:50,
-    backgroundColor: THEME.listBorderColor,
-    borderRadius:4
-  },
-  rowArtworkContainer:{
-    width:60,
-    paddingTop:5
-  },
-  rowLabel : {
-    flex: 10,
-    height: 72,
-    borderColor: THEME.listBorderColor,
-    borderBottomWidth:0
-  },
   rowContainerPlaceholder:{
     flex: 1,
     flexDirection:'row',
     marginBottom:5,
     marginTop:5
   },
-  rowPlaceholder :{
+  rowPlaceholder:{
     flex : 1,
   },
   loadingIndicator:{
     paddingVertical:10
-  },
-  rowLabelText: {
-    color: THEME.mainHighlightColor,
-    lineHeight:20,
-    fontSize: 15,
-    fontWeight:'500'
-  },
-  rowTitleText:{
-    color: THEME.mainHighlightColor,
-    lineHeight:20,
-    fontSize: 15
-  },
-  rowAuthorText:{
-    color: THEME.mainHighlightColor,
-    lineHeight:18,
-    fontSize: 13
-  },
-  rowDescText :{
-    color: THEME.mainColor,
-    fontSize: 13,
-    lineHeight:20
-  },
-  hightlightText : {
-    color: THEME.mainActiveColor
   },
   placeholderRowText:{
     color:THEME.mainColor,
     lineHeight:30,
     textAlign:'center',
     fontSize: 17
-  },
-  rowAction : {
-    flex: 2,
-    paddingRight:20
-  },
-  rowActionText :{
-    color: THEME.mainColor,
-    opacity:0.8,
-    fontSize: 45,
-    fontWeight:'200',
-    lineHeight:55,
-    textAlign : 'right'
-  },
-  footer : {
-    borderColor : THEME.contentBorderColor,
-    borderTopWidth :1,
-    backgroundColor: THEME.mainBgColor
-  },
-  closeAction : {
-    flex: 1,
-    color: '#FFFFFF',
-    fontWeight: '300',
-    height: 40,
-    padding: 10
   }
 });
 

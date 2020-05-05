@@ -5,11 +5,13 @@ import { REHYDRATE } from 'redux-persist/constants';
 function findTrackById(searchId){
   return track => track.id == searchId;
 }
-function applyFilterVisibility(value,playlistId){
+function getTrackAtIndex(queue,idx){
+  return queue[idx];
+}
+function applyFilterVisibility(value){
   return (track) => {
-    if(playlistId.indexOf('default') != 0) return {...track,isVisible:true};
     if(!value || value == '') return {...track,isVisible:true};
-    let matchString = track.label.toLowerCase() + '' + track.username.toLowerCase();
+    let matchString = (track.label + ' ' + track.username).toLowerCase();
     let isVisible = matchString.indexOf(value.toLowerCase()) != -1;
     return {...track,isVisible};
   }
@@ -42,6 +44,23 @@ function getPrevVisibleIndex(index,queue){
   }
   return foundIndex;
 }
+function getRandMax(max){
+  return Math.floor(Math.random() * max)
+}
+function didPlayAllTracks(queue,history){
+  var result = (queue.filter(e => e.isVisible).length - history.length) === 1; 
+  if( result ) console.log('didPlayAllTracks',true);
+  return result;
+}
+function getRandomVisibleIndex(queue,excludeArr){
+  
+  let filteredQueue = queue
+  .filter((e,idx) => !excludeArr.includes(idx))
+  .filter(e => e.isVisible);
+  const randIndex = getRandMax(filteredQueue.length - 1);
+  const randTrack = filteredQueue[randIndex]; 
+  return queue.findIndex(findTrackById(randTrack.id));
+}
 function currentPlaylistReducer(state , currAction){
   let toIndex;
   switch(currAction.type){
@@ -54,14 +73,13 @@ function currentPlaylistReducer(state , currAction){
     return {
       ...state,
       filterTracks: currAction.value,
-      //TODO: change visibility flag
-      tracks: state.tracks.map(applyFilterVisibility(currAction.value,state.id))
+      tracks: state.tracks.map(applyFilterVisibility(currAction.value))
     };
   case actionTypes.ADD_PLAYLIST_ITEM:
     if((state.tracks).some(findTrackById(currAction.track.id))){
       return state;
     }
-    let currTrack = applyFilterVisibility(state.filterTracks,state.id)(currAction.track);
+    let currTrack = applyFilterVisibility(state.filterTracks)(currAction.track);
     return {
       ...state,
       tracks : [currTrack, ...state.tracks],
@@ -71,9 +89,11 @@ function currentPlaylistReducer(state , currAction){
   case actionTypes.SET_PLAYLIST:
     return {
       ...state,
-      tracks : [...currAction.tracks].map(applyFilterVisibility(state.filterTracks,state.id)),
+      tracks : [...currAction.tracks].map(applyFilterVisibility(false)),
       currentTrackIndex:0,
-      autoplay : true
+      autoplay : true,
+      filterTracks : '',
+      history : []
     };
   case actionTypes.REMOVE_PLAYLIST_ITEM:
     let toRemoveIdx = state.tracks.findIndex(findTrackById(currAction.track.id));
@@ -81,23 +101,49 @@ function currentPlaylistReducer(state , currAction){
     if( toRemoveIdx < state.currentTrackIndex && state.currentTrackIndex > 0){
       toTrackIdx = state.currentTrackIndex - 1;
     }
+    let newHistory = state.history.filter(tId => tId !== currAction.track.id);
     return {
       ...state,
       tracks : toRemoveIdx > -1 ?
         state.tracks.filter( (t,idx) => idx !== toRemoveIdx) : state.tracks,
       currentTrackIndex: toTrackIdx,
+      history: newHistory,
       autoplay : false
     };
   case actionTypes.INCREMENT_CURR_PLAY_INDEX:
     if(state.tracks.length == 0) return state;
-    let nextIndex = getNextVisibleIndex(state.currentTrackIndex, state.tracks);
+    let nextIndex;
+    let history;
+    if(currAction.shuffle) {
+      let resetHistory = didPlayAllTracks(state.tracks,state.history);
+      let currentTrack = getTrackAtIndex(state.tracks,state.currentTrackIndex);
+      let currentTrackId = currentTrack && currentTrack.id;
+      history = resetHistory ? 
+        [currentTrackId] : [currentTrackId, ...state.history];
+      nextIndex = getRandomVisibleIndex(state.tracks,history);
+    } else {
+      nextIndex = getNextVisibleIndex(state.currentTrackIndex, state.tracks);
+      history = [];
+    }
     return {
       ...state,
+      history,
       currentTrackIndex:nextIndex,
       autoplay : true
     };
   case actionTypes.DECREMENT_CURR_PLAY_INDEX:
     if(state.tracks.length == 0) return state;
+    if(currAction.shuffle && state.history.length) {
+      const history = [...state.history];
+      const shiftId = history.shift(); 
+      const historyIndex = state.tracks.findIndex(findTrackById(shiftId))
+      return {
+        ...state,
+        currentTrackIndex: historyIndex > -1 ? historyIndex : state.currentTrackIndex,
+        history,
+        autoplay : true
+      };
+    }
     let prevIndex = getPrevVisibleIndex(state.currentTrackIndex, state.tracks);
     return {
       ...state,

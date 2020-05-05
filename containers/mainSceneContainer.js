@@ -6,21 +6,15 @@ import React, { Component } from 'react';
 import {
   AppRegistry,
   StyleSheet,
-  Text,
-  TextInput,
   View,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
   TouchableHighlight,
   LayoutAnimation,
   Linking,
-  Image
 } from 'react-native';
 import config from '../helpers/config';
-import { isIphoneX,ifIphoneX } from 'react-native-iphone-x-helper';
+import { ifIphoneX } from 'react-native-iphone-x-helper';
 import THEME from '../styles/variables';
 import AudioPlayerContainer from './audioPlayerContainer';
-import NotificationOverlay from '../components/notificationOverlay';
 import Button from '../components/button';
 import { playbackModeTypes } from '../helpers/constants';
 import { connect } from 'react-redux';
@@ -32,10 +26,11 @@ const {
   SC_CLIENT_SECRET,
   SC_OAUTH_REDIRECT_URI
 } = config;
+
+
 class MainSceneContainer extends Component {
   constructor(props){
     super(props);
-    this.handleOpenURL = this.handleOpenURL.bind(this);
     this.onLoginStart = this.onLoginStart.bind(this);
     this.purgeStore = this.purgeStore.bind(this);
     this.renderPlaybackModeTabBar = this.renderPlaybackModeTabBar.bind(this);
@@ -56,15 +51,7 @@ class MainSceneContainer extends Component {
       {...this.initialButtonsState}
     );
   }
-  componentDidMount(){
-    Linking.addEventListener('url', this.handleOpenURL);
-  }
-  componentWillUnmount(){
-    Linking.removeEventListener('url', this.handleOpenURL);
-  }
-  handleOpenURL(){
-    console.log('handle openURL called',arguments)
-  }
+  
   onLoginStart(){
     Linking.openURL([
       'https://soundcloud.com/connect',
@@ -126,12 +113,37 @@ class MainSceneContainer extends Component {
                onPressed={this.switchPlaybackSide} />
           }
           if( this.props.mode != 'S' && (!isSelected && e.mode != 'S')) return null;
+          const imageMap = {
+            'L':{
+              'on':require('../assets/player_top_on.png'),
+              'off':require('../assets/player_top_off.png')
+            },
+            'R':{
+              'on':require('../assets/player_bottom_on.png'),
+              'off':require('../assets/player_bottom_off.png')
+            },
+            'S':{
+              'on':require('../assets/player_split_on.png'),
+              'off': require('../assets/player_split_off.png')
+            }
+          };
+          const buttonImage = imageMap[e.mode][isSelected ? 'on': 'off'];
           return <TouchableHighlight style={styles.panButtoncontainer} key={i}
                   onPress={this.props.onModeSelected.bind(this,e.mode)}>
                   <View>
-                    <AppText bold={true} style={[styles.textSplitControls].concat(isSelectedStyle)}>{e.label}</AppText>
+                  <Button style={styles.buttonImageStyle}
+                    image={buttonImage}
+                    size={'small'}
+                    key={i}
+                    onPressed={this.props.onModeSelected.bind(this,e.mode)} />
                   </View>
-            </TouchableHighlight>;
+            </TouchableHighlight>
+          // return <View style={styles.panButtoncontainer}  key={i} >
+          // <Button style={styles.buttonImageStyle}
+          //   image={buttonImage}
+          //   size={'small'}
+          //   onPressed={this.props.onModeSelected.bind(this,e.mode)} />
+          // </View>
         })}
       </View>
     </View>;
@@ -147,10 +159,6 @@ class MainSceneContainer extends Component {
     }
     return (
       <View style={[styles.container,fullScreenContainerStyle]}>
-          {/*
-            <TouchableHighlight onPress={this.onLoginStart} >
-            <Text style={{color:'gray'}}>Login</Text>
-          </TouchableHighlight>*/}
         <View style={[styles.player,playerLStyle]}>
           {this.renderPlayer(this.props.players[0])}
         </View>
@@ -191,7 +199,6 @@ const styles = StyleSheet.create({
   },
   horizontalContainer:{
     flexDirection:'row',
-    paddingBottom: isIphoneX() ? 20 : 0
   },
   panButtoncontainer:{
     flex:1,
@@ -205,6 +212,12 @@ const styles = StyleSheet.create({
     fontSize:15,
     lineHeight:20,
     color : THEME.mainColor
+  },
+  buttonImageStyle:{
+    flex:1,
+    height:35,
+    alignItems:'center',
+    justifyContent:'center',
   },
   invertSwitchStyle:{
     flex:1,

@@ -4,90 +4,101 @@
 
 import React, { PropTypes, Component } from 'react';
 import {
-  AppRegistry,
   StyleSheet,
-  Text,
-  TextInput,
-  ListView,
-  ActivityIndicator,
-  View,
-  TouchableOpacity,
-  TouchableHighlight,
-  LayoutAnimation
+  Image,
+  View
 } from 'react-native';
 import axios from 'axios';
 import SoundCloudApi from '../modules/SoundcloudApi';
+import SplitCloudApi from '../modules/SplitcloudApi';
+import AnalyticsService from '../modules/Analytics';
 import THEME from '../styles/variables';
-import {animationPresets} from '../helpers/constants';
-import { ucFirst } from '../helpers/formatters';
 import SectionTabBar from '../components/sectionTabBar';
 import SectionItem from '../components/sectionItem';
 import TrackListContainer from '../containers/trackListContainer';
-import ModalPicker from '../components/modalPicker';
 import DiscoverProviderContainer from '../containers/discoverProviderContainer';
+import RelatedTrackPreviewContainer from '../containers/relatedTrackPreviewContainer';
 import OfflineTracksContainer from '../containers/offlineTracksContainer';
-import {formatDuration, formatGenreLabel} from '../helpers/formatters';
-import AppText from './appText';
+import SelectionExpolorer from './selectionExplorer';
+import {formatGenreLabel} from '../helpers/formatters';
+
 class TopList extends Component {
 
   constructor(props){
     super(props);
     this._onGenreChange = this._onGenreChange.bind(this);
-    this.onClosePicker = this.onClosePicker.bind(this);
     this.updateResultList = this.updateResultList.bind(this);
-    this.openGenrePicker = this.openGenrePicker.bind(this);
-    this._onRegionChange = this._onRegionChange.bind(this);
-    this.openRegionPicker = this.openRegionPicker.bind(this);
-    this.getLabelForRegion = this.getLabelForRegion.bind(this);
     this.getLabelForGenre = this.getLabelForGenre.bind(this);
-    this.getPickerOverlayDisplay = this.getPickerOverlayDisplay.bind(this);
     this.onSectionChange = this.onSectionChange.bind(this);
+    this.renderSoundCloudChart = this.renderSoundCloudChart.bind(this);
+    
     this.state = {
       sectionList:[{
-        name:'LOCAL',
-        label:'Saved',
-        enabled:true,
-        visible:true
-      },
-      {
         name:'TOP',
         scChartType: SoundCloudApi.chartType.TOP,
-        label:'Top Chart',
+        label:'Popular',
+        icon: require('../assets/section_top_chart.png'),
         enabled:props.isOnline,
-        visible:true
+        visible:true,
+        offlineAvailable:false
       },
       {
         name:'TRENDING',
-        label:'New & Hot',
+        label:'Trending',
+        icon: require('../assets/section_trending_up.png'),
         scChartType: SoundCloudApi.chartType.TRENDING,
         enabled:props.isOnline,
-        visible:true
+        visible:true,
+        offlineAvailable:false
+      },
+      {
+        name:'SELECTION',
+        label:'Discover',
+        icon: require('../assets/section_playlist_discover.png'),
+        enabled: props.isOnline,
+        visible:true,
+        offlineAvailable:false
+      },
+      {
+        name:'LOCAL',
+        label:'Library',
+        icon: require('../assets/section_local_music.png'),
+        enabled:true,
+        visible:true,
+        offlineAvailable:true
       },
       {
         name:'PLS',
         label:'Explore',
         enabled:props.isOnline,
-        visilble:false
+        visible:false,
+        offlineAvailable:false
       }],
-      section :'TOP',
-      selectedGenre : this.props.selectedGenre || SoundCloudApi.genre.ALL,
-      selectedRegion : this.props.selectedRegion || SoundCloudApi.region.WORLDWIDE,
+      section : props.isOnline ? 'TOP' : 'LOCAL',
+      selectedGenre : props.selectedGenre || 'splitcloud:charts',
+      selectedRegion : props.selectedRegion || SoundCloudApi.region.WORLDWIDE,
       genreOptions : this.getOptionsListByType('genre'),
       regionOptions: this.getOptionsListByType('region'),
       pickerModalType: 'genre',
       trackList : []
     };
 
-    console.log('genreOptions',this.getOptionsListByType('genre'))
+    console.log('topList loaded constructor::isOnline',props.isOnline,'section',this.state.section);
   }
   getCurrSectionObj(){
     return this.state.sectionList.filter(s => s.name === this.state.section ).pop();
   }
   componentWillMount(){
-    this.scApi = new SoundCloudApi({clientId: this.props.scClientId});
+    const { scClientId } = this.props;
+    const opts = {clientId: scClientId};
+    this.scApi = new SoundCloudApi(opts);
+    this.splitcloudApi = new SplitCloudApi(opts);
     this.showStreamableOnly = this.props.showStreamableOnly;
-    //fetch inial genre list
-    this.loadTopSoundCloudTracks().then(this.updateResultList);
+    //fetch initial section list only if online
+    if(this.props.isOnline){
+      this.loadTopSoundCloudTracks().then(this.updateResultList);
+    }
+    this.trackActiveSubScreen();
   }
   componentWillReceiveProps(newProps){
     console.log('props changed for topList',newProps.networkType);
@@ -95,7 +106,7 @@ class TopList extends Component {
       console.log('isOnline changed for topList')
       this.setState((state) => {
         let sectionList = state.sectionList.map(s => {
-          if(s.name !== 'LOCAL') s.enabled = newProps.isOnline;
+          if(!s.offlineAvailable) s.enabled = newProps.isOnline;
           return s;
         });
         return {
@@ -106,25 +117,42 @@ class TopList extends Component {
     }
   }
   componentDidUpdate(prevProps,prevState){
+    const { section, selectedGenre, selectedRegion } = this.state;
     if(
-      this.state.section != prevState.section ||
-      this.state.selectedGenre !== prevState.selectedGenre ||
-      this.state.selectedRegion !== prevState.selectedRegion
+      section != prevState.section ||
+      selectedGenre !== prevState.selectedGenre ||
+      selectedRegion !== prevState.selectedRegion
     ){
-      this.loadTopSoundCloudTracks().then(this.updateResultList,(err) => {
-        console.log('ignore as old genre request',err)
-      });
+      this.trackActiveSubScreen();
+      if(this.getCurrSectionObj().scChartType){
+        this.loadTopSoundCloudTracks().then(this.updateResultList);
+      }
+      if(this.getCurrSectionObj().name == 'SELECTION'){
+        this.loadDiscoverySection().then(this.updateResultList);
+      }
     }
+  }
+  trackActiveSubScreen(){
+    const { section, selectedGenre } = this.state;
+    const subSection = this.getCurrSectionObj().scChartType ? selectedGenre : null;
+    AnalyticsService.sendNestedScreenView([section, subSection].join(' - '))
   }
   getOptionsListByType(type){
     if(!['genre','region'].includes(type)) return [];
-    return Object.keys(SoundCloudApi[type]).map((key,i) => {
+    let optionsList = Object.keys(SoundCloudApi[type]).map((key,i) => {
       return {
         label : formatGenreLabel(key),
         value : SoundCloudApi[type][key],
-        key : i
       }
     });
+
+    if(type == 'genre'){
+      optionsList.splice(1,0,{
+        label : 'On SplitCloud',
+        value : 'splitcloud:charts',
+      });
+    }
+    return optionsList.map((el,i) =>({...el,key:i}));
   }
   getKeyByValue(obj,value){
     return Object.keys(obj).find((key) => obj[key] == value);
@@ -132,14 +160,8 @@ class TopList extends Component {
   getLabelForGenre(genreValue){
     return formatGenreLabel(this.getKeyByValue(SoundCloudApi.genre,genreValue));
   }
-  getLabelForRegion(regionValue){
-    return formatGenreLabel(this.getKeyByValue(SoundCloudApi.region,regionValue));
-  }
   _onGenreChange(genre){
     this.setState({selectedGenre:genre});
-  }
-  _onRegionChange(region){
-    this.setState({selectedRegion:region});
   }
   _invalidatePrevRequest(){
     if(this.prevQueryCancelToken){
@@ -153,11 +175,24 @@ class TopList extends Component {
   loadTopSoundCloudTracks(){
     this._invalidatePrevRequest();
     this.props.onLoadingStateChange(true);
-    let requestPromise = this.scApi.getPopularByGenre(
-      this.getCurrSectionObj().scChartType,
-      this.state.selectedGenre,
-      this.state.selectedRegion,
-      { cancelToken : this.generateRequestInvalidationToken().token});
+    let requestPromise ;
+    let currChartType = this.getCurrSectionObj().scChartType;
+    if (this.state.selectedGenre === 'splitcloud:charts') {
+      const apiMap = {
+        [SoundCloudApi.chartType.TOP] : 'getWeeklyPopular',
+        [SoundCloudApi.chartType.TRENDING] : 'getWeeklyTrending'
+      };
+      const chartName =apiMap[currChartType]
+      requestPromise = this.splitcloudApi[chartName](
+        {cancelToken : this.generateRequestInvalidationToken().token});
+    } else {
+      requestPromise = this.scApi.getPopularByGenre(
+        currChartType,
+        this.state.selectedGenre,
+        this.state.selectedRegion,
+        { cancelToken : this.generateRequestInvalidationToken().token});
+    }
+  
     requestPromise.catch((err) => {
       this.props.onRequestFail(err,this.state.selectedGenre);
       return Promise.resolve(err);
@@ -171,6 +206,21 @@ class TopList extends Component {
     );
     return requestPromise;
   }
+  loadDiscoverySection(){
+    this._invalidatePrevRequest();
+    this.props.onLoadingStateChange(true);
+    let requestPromise = this.splitcloudApi.getDiscoveryPlaylists({
+      cancelToken : this.generateRequestInvalidationToken().token
+    });
+    requestPromise.catch((err) => {
+      this.props.onRequestFail(err,this.state.selectedGenre);
+      return Promise.resolve(err);
+    }).then((val) => {
+      if(axios.isCancel(val))return false;
+      this.props.onLoadingStateChange(false);
+    });
+    return requestPromise;
+  }
   updateResultList(resp){
     // in case of empty results or no search terms
     if(!resp){
@@ -178,81 +228,64 @@ class TopList extends Component {
     }
     this.setState({ trackList : resp });
   }
-  onClosePicker(){
-    LayoutAnimation.configureNext(animationPresets.overlaySlideInOut);
-    this.setState({pickerModalOpen:false});
-  }
-  openGenrePicker(){
-    LayoutAnimation.configureNext(animationPresets.overlaySlideInOut);
-    this.setState({pickerModalOpen:true,pickerModalType:'genre'});
-  }
-  openRegionPicker(){
-    LayoutAnimation.configureNext(animationPresets.overlaySlideInOut);
-    this.setState({pickerModalOpen:true,pickerModalType:'region'});
-  }
   onSectionChange(sectionName){
     this.setState({
       section:sectionName
     });
   }
-  getPickerOverlayDisplay(type){
-    return this.state.pickerModalOpen && this.state.pickerModalType == type
-      ? styles.openModalStyle: styles.closedModalStyle;
+  renderSoundCloudChart(){
+    const renderSelectionGenre = this.getCurrSectionObj().scChartType;
+    return <View style={[renderSelectionGenre ? {flex:1} : {flex:0,height:0}]}>
+      <SectionTabBar  
+        style={styles.sectionContainer}
+        active={this.state.selectedGenre} 
+        onSelected={this._onGenreChange}>
+        {
+          this.state.genreOptions.map( ({label,value,key}) => 
+            <SectionItem key={key} label={label} name={value} style={[styles.genreItemContainer]} activeStyle={styles.activeGenreContainer} textStyle={[styles.genreItemText]} />
+          )
+        }
+      </SectionTabBar>
+      {!!this.getCurrSectionObj().scChartType && 
+        <TrackListContainer {...this.props}
+        trackList={this.state.trackList}
+        side={this.props.side}
+        resetToTop={true}
+        />}
+      <RelatedTrackPreviewContainer 
+          navigator={this.props.navigator}
+          side={this.props.side}
+        />
+    </View>
   }
   render() {
     return (
       <View style={styles.container}>
-        <SectionTabBar active={this.state.section} onSelected={this.onSectionChange}>
+        <SectionTabBar disableScroll 
+         style={styles.sectionContainer}
+         active={this.state.section} 
+         onSelected={this.onSectionChange}>
           {
             this.state.sectionList
-            .filter(s => s.visible)
-            .map(({name,label,enabled},key) => enabled && <SectionItem key={key} name={name} label={label}/>)
+            .filter(s => s.visible && s.enabled)
+            .map(({name,label,enabled,icon},key,arr) => {
+              let itemStyle = arr.length > 1 ?
+              styles.sectionItemContainer: styles.sectionSingleItem;
+              return <SectionItem key={key} name={name} label={label} style={itemStyle}>{
+              isActive => {
+                let activeStyle = isActive ? styles.activeSectionIcon : null;
+                return <Image source={icon} resizeMode={'contain'} style={[styles.sectionIcon,activeStyle]} />
+              }
+              }</SectionItem>
+            })
           }
         </SectionTabBar>
-        {this.getCurrSectionObj().scChartType &&
-          <View style={{flex:1}}>
-            <View style={styles.listDescription}>
-              <View style={styles.genreSelectionBtn}>
-                <TouchableHighlight onPress={this.openRegionPicker}>
-                  <View>
-                    <AppText style={styles.listDetailText} >Region</AppText>
-                    <AppText style={styles.genreSelectionText}>{
-                      this.getLabelForRegion(this.state.selectedRegion)
-                    }</AppText>
-                  </View>
-                </TouchableHighlight>
-              </View>
-              <View style={styles.genreSelectionBtn}>
-                  <TouchableHighlight onPress={this.openGenrePicker}>
-                    <View>
-                      <AppText style={styles.listDetailText}>Genre</AppText>
-                      <AppText style={styles.genreSelectionText}>{
-                        this.getLabelForGenre(this.state.selectedGenre)
-                      }</AppText>
-                    </View>
-                  </TouchableHighlight>
-              </View>
-            </View>
-            <TrackListContainer {...this.props}
-              trackList={this.state.trackList}
-              side={this.props.side}
-              resetToTop={true}
-              />
-          </View>}
+          {this.renderSoundCloudChart()}
           {this.getCurrSectionObj().name == 'PLS' && <DiscoverProviderContainer {...this.props}/>}
           {this.getCurrSectionObj().name == 'LOCAL' && <OfflineTracksContainer {...this.props}/>}
-          <ModalPicker
-            overlayStyle={this.getPickerOverlayDisplay('genre')}
-            options={this.state.genreOptions}
-            selected={this.state.selectedGenre}
-            onClose={this.onClosePicker}
-            onValueChange={this._onGenreChange}/>
-          <ModalPicker
-           overlayStyle={this.getPickerOverlayDisplay('region')}
-           options={this.state.regionOptions}
-           selected={this.state.selectedRegion}
-           onClose={this.onClosePicker}
-           onValueChange={this._onRegionChange}/>
+          {this.getCurrSectionObj().name == 'SELECTION' && <SelectionExpolorer 
+            {...this.props} selectionList={this.state.trackList}
+            />}
       </View>
     );
   }
@@ -275,34 +308,63 @@ const styles = StyleSheet.create({
     flex:1,
     paddingRight: 10,
     paddingVertical:10,
-    alignItems:'center'
   },
   genreSelectionText : {
     color : THEME.mainActiveColor,
-    fontSize : 16,
-    lineHeight:23,
-    textAlign: 'center',
-    fontWeight:'600'
+    fontSize : 18,
+    textAlign: 'right',
+    fontWeight:'600',
+    flex:1
+  },
+  genreItemContainer: {
+    padding:10,
+    marginRight:10,
+    borderRadius:5,
+    backgroundColor:THEME.mainBgColor,
+    borderWidth:0.5,
+    borderColor: THEME.contentBorderColor,
+  },
+  activeGenreContainer:{
+    backgroundColor: THEME.contentBorderColor,
+    borderColor: THEME.mainHighlightColor
+  },
+  genreItemText:{
+    paddingRight:0,
+    fontSize:15
   },
   listDescription : {
-    backgroundColor: THEME.contentBgColor,
+    backgroundColor: THEME.mainBgColor,
     paddingLeft:10,
+    paddingVertical:10,
     borderBottomWidth:1,
     borderColor: THEME.contentBorderColor,
     justifyContent:'space-between',
     flexDirection:'row'
   },
-  listDescriptionText :{
-    paddingRight:20,
+  listDetailText :{
     fontSize : 18,
-    paddingVertical:10,
-    fontWeight:'600',
     color: THEME.mainHighlightColor
   },
-  listDetailText :{
-    fontSize : 16,
-    textAlign: 'center',
-    color: THEME.mainColor
+  sectionContainer:{
+    paddingLeft:0,
+    alignItems:'flex-start',
+    paddingVertical:10
+  },
+  sectionItemContainer:{
+    flex:1,
+    alignItems:'center'
+  },
+  sectionSingleItem:{
+    width:80,
+    alignItems:'center'
+  },
+  sectionIcon:{
+    width:35,
+    height:35,
+    opacity:0.5
+  },
+  activeSectionIcon:{
+    opacity:1
   },
   openModalStyle : {
     height: 250

@@ -1,19 +1,17 @@
 import * as StoreReview from 'react-native-store-review';
 import { actionTypes } from '../constants/actions';
-import { incrementPositiveAction,reviewCountDoneAction } from '../actions/storeReviewAction';
-import { MAX_REVIEW_POSITIVE_ACTIONS } from '../../helpers/constants';
+import { reviewCountDoneAction } from '../actions/storeReviewAction';
+import { MAX_REVIEW_POSITIVE_ACTIONS, MAX_INTERACTION_COUNT, MAX_DAILY_INTERACTION_COUNT } from '../../helpers/constants';
 const actionTypeWhitelist = [
   actionTypes.INCREMENT_CURR_PLAY_INDEX,
   actionTypes.DECREMENT_CURR_PLAY_INDEX,
   actionTypes.CHANGE_CURR_PLAY_INDEX
 ];
-
 const StoreReviewRequestor = store => {
   return next => {
-    return action => {
-      console.log(' store middleware');
-      let result = next(action);
+    return action => {      
       const state = store.getState().reviewState;
+      let result = null;
       if( actionTypeWhitelist.indexOf(action.type) > -1 ){
         // This API is only available on iOS 10.3 or later
         if ( state.actionCounter == MAX_REVIEW_POSITIVE_ACTIONS ) {
@@ -21,7 +19,16 @@ const StoreReviewRequestor = store => {
           StoreReview.isAvailable && StoreReview.requestReview();
           store.dispatch(reviewCountDoneAction());
         }
-        store.dispatch(incrementPositiveAction());
+        if ( 
+          state.actionCounter === MAX_INTERACTION_COUNT ||
+          state.dailyActionCounter === MAX_DAILY_INTERACTION_COUNT
+        ) {
+          console.log('max songs reached  - block inflight change track action')
+        } else {
+          result = next(action);
+        }
+      } else {
+        result = next(action);
       }
       return result;
     }

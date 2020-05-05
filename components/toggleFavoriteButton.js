@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { ucFirst } from '../helpers/formatters';
 import THEME from '../styles/variables';
+
 function ToggleFavoriteButton(props){
   let label = props.isFavorite ? '×':'+';
   let textLabel = [styles.textLabel];
@@ -18,7 +19,14 @@ function ToggleFavoriteButton(props){
   buttonIconStyle.push(styles[`button${ucFirst(props.size)}`]);
 
   if(props.disabled) buttonIconStyle.push(styles.disabledButton);
-  if(props.isFavorite) textLabel.push(styles.textSecondaryLabel)
+  if(props.isFavorite) textLabel.push(styles.textSecondaryLabel);
+  if(props.inlineLayout){
+    return <TouchableOpacity 
+          disabled={props.disabled}
+          onPress={() => props.onPressed(props.isFavorite) }>
+          <Text style={styles.inlineTextLabel}>{label}</Text>
+      </TouchableOpacity>;  
+  }
   return <View style={buttonIconStyle.concat(props.style)} >
         <TouchableOpacity style={styles.touchable}
             disabled={props.disabled}
@@ -31,7 +39,8 @@ ToggleFavoriteButton.propTypes ={
   'onPressed' : PropTypes.func.isRequired,
   'isFavorite' : PropTypes.bool.isRequired,
   'disabled' : PropTypes.bool,
-  'size' : PropTypes.oneOf(['normal', 'small'])
+  'size' : PropTypes.oneOf(['normal', 'small']),
+  'inlineLayout' : PropTypes.bool
 }
 const styles = StyleSheet.create({
   buttonContainer :{
@@ -39,12 +48,20 @@ const styles = StyleSheet.create({
   disabledButton:{
     opacity:0.4
   },
+  inlineTextLabel:{
+    color: THEME.mainColor,
+    opacity: 0.5,
+    fontSize: 45,
+    fontWeight:'300',
+    lineHeight:55,
+    textAlign : 'right'
+  },
   textLabel:{
-    marginTop:-12,
+    marginTop:-9,
     marginLeft:2,
     textAlign:'center',
-    fontSize : 50,
-    fontWeight: "300",
+    fontSize : 40,
+    fontWeight: '300',
     color: THEME.mainHighlightColor,
   },
   textSecondaryLabel:{
@@ -60,12 +77,12 @@ const styles = StyleSheet.create({
     flex:1
   },
   buttonIcon:{
-    borderRadius:20,
+    borderRadius:22,
     borderBottomLeftRadius:0,
     borderBottomRightRadius:0,
     backgroundColor:THEME.imageTextOverlayBgColor,
-    width:40,
-    height:40
+    width:45,
+    height:35
   },
   buttonNormal:{
   },
